@@ -1,19 +1,19 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
 import "./styles.css";
 
 const BLUE_ON = "#278AB0";
 const GRAY_OFF = "#C9CDD2"; // gris suave
 
-// Dimensiones del switch (alargado)
-const TRACK_W = 260;
-const TRACK_H = 56;
+// Dimensiones del switch (alargado y VERTICAL)
+const TRACK_W = 56;
+const TRACK_H = 260;
 const PADDING = 6;
-const KNOB = TRACK_H - PADDING * 2; // 44px
-const LEFT_X = PADDING;
-const RIGHT_X = TRACK_W - PADDING - KNOB;
+const KNOB = TRACK_W - PADDING * 2; // diámetro del knob (44px)
+const TOP_Y = 0; // isOn
+const BOTTOM_Y = TRACK_H - PADDING * 2 - KNOB; // isOff
 
-function AnimatedSwitch({ label, isOn, onToggle, disabled, shake = false }) {
+function AnimatedSwitch({ label, isOn, onToggle, disabled, shake = false, shakeStrong = false }) {
   const handleKey = useCallback(
     (e) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -29,7 +29,7 @@ function AnimatedSwitch({ label, isOn, onToggle, disabled, shake = false }) {
       className="sw-item"
       animate={
         shake
-          ? { x: [0, -6, 6, -6, 6, 0] }
+          ? { x: [0, -(shakeStrong ? 10 : 6), (shakeStrong ? 10 : 6), -(shakeStrong ? 10 : 6), (shakeStrong ? 10 : 6), 0] }
           : { x: 0 }
       }
       transition={
@@ -38,16 +38,14 @@ function AnimatedSwitch({ label, isOn, onToggle, disabled, shake = false }) {
           : { type: "spring", stiffness: 200, damping: 18 }
       }
     >
-      {label && <div className="sw-label">{label}</div>}
+  {label && <div className="sw-label sw-label-top">{label}</div>}
 
       <motion.div
-        className="sw-track"
+        className="sw-track sw-track-vertical"
         style={{ width: TRACK_W, height: TRACK_H }}
         animate={{
           backgroundColor: isOn ? BLUE_ON : GRAY_OFF,
-          boxShadow: isOn
-            ? "inset 0 2px 4px rgba(0,0,0,0.15), 0 8px 18px rgba(39,138,176,0.45)"
-            : "inset 0 2px 4px rgba(0,0,0,0.10), 0 4px 10px rgba(0,0,0,0.15)",
+          boxShadow: "none",
           borderColor: "#FFFFFF",
         }}
         transition={{ type: "spring", stiffness: 260, damping: 24 }}
@@ -58,14 +56,12 @@ function AnimatedSwitch({ label, isOn, onToggle, disabled, shake = false }) {
         onKeyDown={handleKey}
       >
         <motion.div
-          className="sw-knob"
+          className="sw-knob sw-knob-vertical"
           style={{ width: KNOB, height: KNOB }}
           animate={{
-            x: isOn ? RIGHT_X : LEFT_X,
+            y: isOn ? TOP_Y : BOTTOM_Y,
             backgroundColor: "#FFFFFF",
-            boxShadow: isOn
-              ? "0 6px 14px rgba(39,138,176,0.35), inset 0 0 0 2px rgba(255,255,255,0.9)"
-              : "0 4px 10px rgba(0,0,0,0.2), inset 0 0 0 2px rgba(255,255,255,0.9)",
+            boxShadow: "none",
           }}
           transition={{ type: "spring", stiffness: 340, damping: 22 }}
           whileTap={{ scale: 0.96 }}
@@ -79,111 +75,167 @@ function AnimatedSwitch({ label, isOn, onToggle, disabled, shake = false }) {
 }
 
 export default function Switches() {
-  // 1: Inicial (Bajo Coste + Mantenible ON, Rápido OFF)
-  // 2: Forzar Rápido ON, los otros tiemblan
-  // 3: Caída de Mantenible (OFF)
-  const [stage, setStage] = useState(1);
+  // Estado inicial: todo apagado
+  const [stage, setStage] = useState(1); // no se usa para UI
   const [state, setState] = useState({
     Rapido: false,
-    Mantenible: true,
-    BajoCoste: true,
+    Mantenible: false,
+    BajoCoste: false,
   });
+  const [order, setOrder] = useState([]); // orden de encendidos actuales
+  const [allShake, setAllShake] = useState(false);
+  const [forcingKey, setForcingKey] = useState(null);
+  const forceRef = useRef(null);
+  const offRef = useRef(null);
 
-  // Derivar props por stage
+  // utilidades
+  const clearTimers = () => {
+    if (forceRef.current) { clearTimeout(forceRef.current); forceRef.current = null; }
+    if (offRef.current) { clearTimeout(offRef.current); offRef.current = null; }
+  };
+
+  const onToggle = (key) => {
+    // Si está en forzado, ignorar interacción sobre ese mismo switch
+    if (forcingKey === key) return;
+
+    const isOn = state[key];
+    const onCount = Object.values(state).filter(Boolean).length;
+
+    if (!isOn) {
+      // Intento de encender
+      if (onCount === 2) {
+        // es el último -> cuesta prenderse
+        setForcingKey(key);
+        forceRef.current && clearTimeout(forceRef.current);
+        // temblar fuerte el último
+        forceRef.current = setTimeout(() => {
+          setState((s) => ({ ...s, [key]: true }));
+          setForcingKey(null);
+          // registrar orden si no está
+          setOrder((prev) => (prev.includes(key) ? prev : [...prev, key]));
+          // ahora los tres están ON -> tiembla todo y programar apagado del primero
+          setAllShake(true);
+          setOrder((prev) => {
+            const first = prev[0] || key;
+            offRef.current && clearTimeout(offRef.current);
+            offRef.current = setTimeout(() => {
+              setState((s) => ({ ...s, [first]: false }));
+              setAllShake(false);
+              setOrder((p) => p.filter((k) => k !== first));
+            }, 15000);
+            return prev;
+          });
+        }, 1200);
+        return;
+      }
+
+      // encendido normal
+      setState((s) => ({ ...s, [key]: true }));
+      setOrder((prev) => (prev.includes(key) ? prev : [...prev, key]));
+    } else {
+      // Apagar manual cancela forzados/temblores/timers
+      clearTimers();
+      setAllShake(false);
+      setForcingKey(null);
+      setState((s) => ({ ...s, [key]: false }));
+      setOrder((prev) => prev.filter((k) => k !== key));
+    }
+  };
+
+  // shakes por elemento
   const propsByLabel = useMemo(() => {
-    return {
-      Rapido: { isOn: state.Rapido, shake: false },
-      Mantenible: { isOn: state.Mantenible, shake: stage === 2 },
-      BajoCoste: { isOn: state.BajoCoste, shake: stage === 2 },
+    const base = {
+      Rapido: { isOn: state.Rapido, shake: false, shakeStrong: false },
+      Mantenible: { isOn: state.Mantenible, shake: false, shakeStrong: false },
+      BajoCoste: { isOn: state.BajoCoste, shake: false, shakeStrong: false },
     };
-  }, [state, stage]);
-
-  // Avance automático: a stage 2 pronto y a stage 3 tras ~10s
-  useEffect(() => {
-    if (stage === 1) {
-      const t = setTimeout(() => {
-        setStage(2);
-        setState((s) => ({ ...s, Rapido: true }));
-      }, 1000);
-      return () => clearTimeout(t);
+    if (allShake) {
+      Object.keys(base).forEach((k) => (base[k].shake = true));
     }
-    if (stage === 2) {
-      const t = setTimeout(() => {
-        // pasar a 3, caer Mantenible
-        setStage(3);
-        setState((s) => ({ ...s, Mantenible: false }));
-      }, 10000);
-      return () => clearTimeout(t);
+    if (forcingKey) {
+      base[forcingKey].shake = true;
+      base[forcingKey].shakeStrong = true;
     }
-  }, [stage]);
+    return base;
+  }, [state, allShake, forcingKey]);
 
+  // Botones auxiliares
   const next = () => {
-    if (stage === 1) {
-      setStage(2);
-      setState((s) => ({ ...s, Rapido: true }));
-    } else if (stage === 2) {
-      setStage(3);
-      setState((s) => ({ ...s, Mantenible: false }));
+    // 1) Si hay forzado activo, completar de inmediato
+    if (forcingKey) {
+      if (forceRef.current) {
+        clearTimeout(forceRef.current);
+        forceRef.current = null;
+      }
+      setState((s) => ({ ...s, [forcingKey]: true }));
+      setOrder((prev) => (prev.includes(forcingKey) ? prev : [...prev, forcingKey]));
+      setForcingKey(null);
+      setAllShake(true);
+    }
+
+    // 2) Si hay tres ON, apagar inmediatamente el primero (sin esperar)
+    const onKeys = Object.entries(state).filter(([, v]) => v).map(([k]) => k);
+    if (onKeys.length === 3) {
+      const first = order[0];
+      if (first) {
+        offRef.current && clearTimeout(offRef.current);
+        setState((s) => ({ ...s, [first]: false }));
+        setAllShake(false);
+        setOrder((p) => p.filter((k) => k !== first));
+      }
     }
   };
 
   const reset = () => {
-    setStage(1);
-    setState({ Rapido: false, Mantenible: true, BajoCoste: true });
+    clearTimers();
+    setAllShake(false);
+    setForcingKey(null);
+    setOrder([]);
+    setState({ Rapido: false, Mantenible: false, BajoCoste: false });
   };
-
-  const disabled = true; // deshabilitar toggles manuales para respetar la secuencia
 
   return (
     <div className="sw-sequence">
-      <div className="sw-vertical">
+      <div className="sw-columns">
         {/* Rápido Desarrollo */}
         <AnimatedSwitch
-          label="Rápido Desarrollo"
+          label="Bajo Coste"
           isOn={propsByLabel.Rapido.isOn}
-          onToggle={() => {}}
-          disabled={disabled}
+          onToggle={() => onToggle("BajoCoste")}
+          disabled={false}
+          shake={propsByLabel.Rapido.shake}
+          shakeStrong={propsByLabel.Rapido.shakeStrong}
         />
 
-        {/* Mantenible (puede caer en stage 3) */}
-        <motion.div
-          initial={false}
-          animate={
-            stage === 3
-              ? { y: 140, opacity: 0 }
-              : { y: 0, opacity: 1 }
-          }
-          transition={{ duration: 1.1, ease: "easeIn" }}
-        >
-          <AnimatedSwitch
-            label="Mantenible"
-            isOn={propsByLabel.Mantenible.isOn}
-            shake={propsByLabel.Mantenible.shake}
-            onToggle={() => {}}
-            disabled={disabled}
-          />
-        </motion.div>
+        {/* Mantenible */}
+        <AnimatedSwitch
+          label="Mantenible"
+          isOn={propsByLabel.Mantenible.isOn}
+          shake={propsByLabel.Mantenible.shake}
+          shakeStrong={propsByLabel.Mantenible.shakeStrong}
+          onToggle={() => onToggle("Mantenible")}
+          disabled={false}
+        />
 
         {/* Bajo Coste */}
         <AnimatedSwitch
-          label="Bajo Coste"
+          label="Rápida entrega"
           isOn={propsByLabel.BajoCoste.isOn}
           shake={propsByLabel.BajoCoste.shake}
-          onToggle={() => {}}
-          disabled={disabled}
+          shakeStrong={propsByLabel.BajoCoste.shakeStrong}
+          onToggle={() => onToggle("Rapido")}
+          disabled={false}
         />
       </div>
 
       <div className="fab-wrap">
-        {stage < 3 ? (
-          <button className="fab" onClick={next} aria-label="Avanzar secuencia">
-            Avanzar
-          </button>
-        ) : (
-          <button className="fab" onClick={reset} aria-label="Reiniciar secuencia">
-            Reiniciar
-          </button>
-        )}
+        <button className="fab" onClick={next} aria-label="Avanzar">
+          Avanzar
+        </button>
+        &nbsp;
+        <button className="fab" onClick={reset} aria-label="Reiniciar">
+          Reiniciar
+        </button>
       </div>
     </div>
   );

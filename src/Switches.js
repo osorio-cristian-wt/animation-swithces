@@ -13,7 +13,7 @@ const KNOB = TRACK_W - PADDING * 2; // diámetro del knob (44px)
 const TOP_Y = 0; // isOn
 const BOTTOM_Y = TRACK_H - PADDING * 2 - KNOB; // isOff
 
-function AnimatedSwitch({ label, isOn, onToggle, disabled, shake = false, shakeStrong = false }) {
+function AnimatedSwitch({ label, isOn, onToggle, disabled, shake = false, shakeStrong = false, blink = false, hot = false }) {
   const handleKey = useCallback(
     (e) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -42,12 +42,14 @@ function AnimatedSwitch({ label, isOn, onToggle, disabled, shake = false, shakeS
         className="sw-track sw-track-vertical"
         style={{ width: TRACK_W, height: TRACK_H }}
         animate={
-          shake
+          hot
+            ? { backgroundColor: "#B22222" }
+            : blink
             ? { backgroundColor: [isOn ? BLUE_ON : GRAY_OFF, "#B22222", isOn ? BLUE_ON : GRAY_OFF] }
             : { backgroundColor: isOn ? BLUE_ON : GRAY_OFF }
         }
         transition={{
-          backgroundColor: shake
+          backgroundColor: blink
             ? { duration: 1.2, repeat: Infinity, ease: "easeInOut" }
             : { type: "spring", stiffness: 260, damping: 24 }
         }}
@@ -95,11 +97,15 @@ export default function Switches() {
   const [forcingKey, setForcingKey] = useState(null);
   const forceRef = useRef(null);
   const offRef = useRef(null);
+  const blinkRef = useRef(null);
+  const [tripleBlink, setTripleBlink] = useState(false);
+  const [tripleHot, setTripleHot] = useState(false);
 
   // utilidades
   const clearTimers = () => {
     if (forceRef.current) { clearTimeout(forceRef.current); forceRef.current = null; }
     if (offRef.current) { clearTimeout(offRef.current); offRef.current = null; }
+    if (blinkRef.current) { clearTimeout(blinkRef.current); blinkRef.current = null; }
   };
 
   const onToggle = (key) => {
@@ -121,14 +127,23 @@ export default function Switches() {
           setForcingKey(null);
           // registrar orden si no está
           setOrder((prev) => (prev.includes(key) ? prev : [...prev, key]));
-          // ahora los tres están ON -> tiembla todo y programar apagado del primero
+          // ahora los tres están ON -> tiembla todo y efectos de calor
           setAllShake(true);
+          setTripleHot(false);
+          setTripleBlink(true);
+          blinkRef.current && clearTimeout(blinkRef.current);
+          blinkRef.current = setTimeout(() => {
+            setTripleBlink(false);
+            setTripleHot(true);
+          }, 3000);
           setOrder((prev) => {
             const first = prev[0] || key;
             offRef.current && clearTimeout(offRef.current);
             offRef.current = setTimeout(() => {
               setState((s) => ({ ...s, [first]: false }));
               setAllShake(false);
+              setTripleBlink(false);
+              setTripleHot(false);
               setOrder((p) => p.filter((k) => k !== first));
             }, 15000);
             return prev;
@@ -144,6 +159,8 @@ export default function Switches() {
       // Apagar manual cancela forzados/temblores/timers
       clearTimers();
       setAllShake(false);
+      setTripleBlink(false);
+      setTripleHot(false);
       setForcingKey(null);
       setState((s) => ({ ...s, [key]: false }));
       setOrder((prev) => prev.filter((k) => k !== key));
@@ -153,7 +170,7 @@ export default function Switches() {
   // shakes por elemento
   const propsByLabel = useMemo(() => {
     const base = Object.fromEntries(
-      SWITCHES.map(({ key }) => [key, { isOn: state[key], shake: false, shakeStrong: false }])
+      SWITCHES.map(({ key }) => [key, { isOn: state[key], shake: false, shakeStrong: false, blink: false, hot: false }])
     );
     if (allShake) {
       Object.keys(base).forEach((k) => (base[k].shake = true));
@@ -162,8 +179,14 @@ export default function Switches() {
       base[forcingKey].shake = true;
       base[forcingKey].shakeStrong = true;
     }
+    if (tripleBlink) {
+      Object.keys(base).forEach((k) => (base[k].blink = true));
+    }
+    if (tripleHot) {
+      Object.keys(base).forEach((k) => (base[k].hot = true));
+    }
     return base;
-  }, [state, allShake, forcingKey]);
+  }, [state, allShake, forcingKey, tripleBlink, tripleHot]);
 
   // Botones auxiliares
   const next = () => {
@@ -177,6 +200,14 @@ export default function Switches() {
       setOrder((prev) => (prev.includes(forcingKey) ? prev : [...prev, forcingKey]));
       setForcingKey(null);
       setAllShake(true);
+      // iniciar ciclo de parpadeo -> rojo
+      setTripleHot(false);
+      setTripleBlink(true);
+      blinkRef.current && clearTimeout(blinkRef.current);
+      blinkRef.current = setTimeout(() => {
+        setTripleBlink(false);
+        setTripleHot(true);
+      }, 3000);
     }
 
     // 2) Si hay tres ON, apagar inmediatamente el primero (sin esperar)
@@ -187,6 +218,8 @@ export default function Switches() {
         offRef.current && clearTimeout(offRef.current);
         setState((s) => ({ ...s, [first]: false }));
         setAllShake(false);
+        setTripleBlink(false);
+        setTripleHot(false);
         setOrder((p) => p.filter((k) => k !== first));
       }
     }
@@ -195,6 +228,8 @@ export default function Switches() {
   const reset = () => {
     clearTimers();
     setAllShake(false);
+    setTripleBlink(false);
+    setTripleHot(false);
     setForcingKey(null);
     setOrder([]);
     setState({ Rapido: false, Mantenible: false, BajoCoste: false });
@@ -210,6 +245,8 @@ export default function Switches() {
             isOn={propsByLabel[key].isOn}
             shake={propsByLabel[key].shake}
             shakeStrong={propsByLabel[key].shakeStrong}
+            blink={propsByLabel[key].blink}
+            hot={propsByLabel[key].hot}
             onToggle={() => onToggle(key)}
             disabled={false}
           />

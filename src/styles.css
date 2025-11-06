@@ -1,8 +1,9 @@
 :root {
-  --bg: #f4f6f8;
+  --bg: #ffffff;
   --text: #1f2937;
   --blue: #278AB0;
   --gray: #c9cdd2;
+  --border: #bfc5cc; /* reborde gris */
 }
 
 html, body, #root { height: 100%; }
@@ -37,17 +38,16 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  font-size: 18px; /* texto más grande */
+  gap: 10px;
 }
 
-.sw-label { text-align: center; font-weight: 600; }
-.sw-label-top { text-align: center; }
+.sw-label { text-align: center; font-weight: 600; font-size: 18px; }
+.sw-label-bottom { margin-top: 10px; }
 
 .sw-track {
   position: relative;
   border-radius: 999px;
-  border: 2px solid #fff; /* reborde blanco */
+  border: 2px solid var(--border); /* reborde gris */
   cursor: pointer;
   user-select: none;
   display: block;

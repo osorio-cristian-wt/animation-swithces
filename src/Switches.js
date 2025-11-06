@@ -38,17 +38,19 @@ function AnimatedSwitch({ label, isOn, onToggle, disabled, shake = false, shakeS
           : { type: "spring", stiffness: 200, damping: 18 }
       }
     >
-  {label && <div className="sw-label sw-label-top">{label}</div>}
-
       <motion.div
         className="sw-track sw-track-vertical"
         style={{ width: TRACK_W, height: TRACK_H }}
-        animate={{
-          backgroundColor: isOn ? BLUE_ON : GRAY_OFF,
-          boxShadow: "none",
-          borderColor: "#FFFFFF",
+        animate={
+          shake
+            ? { backgroundColor: [isOn ? BLUE_ON : GRAY_OFF, "#B22222", isOn ? BLUE_ON : GRAY_OFF] }
+            : { backgroundColor: isOn ? BLUE_ON : GRAY_OFF }
+        }
+        transition={{
+          backgroundColor: shake
+            ? { duration: 1.2, repeat: Infinity, ease: "easeInOut" }
+            : { type: "spring", stiffness: 260, damping: 24 }
         }}
-        transition={{ type: "spring", stiffness: 260, damping: 24 }}
         role="switch"
         aria-checked={isOn}
         tabIndex={0}
@@ -70,18 +72,24 @@ function AnimatedSwitch({ label, isOn, onToggle, disabled, shake = false, shakeS
         {/* Reborde blanco del track */}
         <div className="sw-border" />
       </motion.div>
+      {label && <div className="sw-label sw-label-bottom">{label}</div>}
     </motion.div>
   );
 }
 
+// Definimos keys ESTABLES y labels editables desde una sola fuente
+const SWITCHES = [
+  { key: "BajoCoste", label: "Bajo Coste" },
+  { key: "Mantenible", label: "Mantenible" },
+  { key: "Rapido", label: "Entrega Rápida" },
+];
+
 export default function Switches() {
   // Estado inicial: todo apagado
   const [stage, setStage] = useState(1); // no se usa para UI
-  const [state, setState] = useState({
-    Rapido: false,
-    Mantenible: false,
-    BajoCoste: false,
-  });
+  const [state, setState] = useState(
+    SWITCHES.reduce((acc, s) => ({ ...acc, [s.key]: false }), {})
+  );
   const [order, setOrder] = useState([]); // orden de encendidos actuales
   const [allShake, setAllShake] = useState(false);
   const [forcingKey, setForcingKey] = useState(null);
@@ -144,11 +152,9 @@ export default function Switches() {
 
   // shakes por elemento
   const propsByLabel = useMemo(() => {
-    const base = {
-      Rapido: { isOn: state.Rapido, shake: false, shakeStrong: false },
-      Mantenible: { isOn: state.Mantenible, shake: false, shakeStrong: false },
-      BajoCoste: { isOn: state.BajoCoste, shake: false, shakeStrong: false },
-    };
+    const base = Object.fromEntries(
+      SWITCHES.map(({ key }) => [key, { isOn: state[key], shake: false, shakeStrong: false }])
+    );
     if (allShake) {
       Object.keys(base).forEach((k) => (base[k].shake = true));
     }
@@ -197,35 +203,17 @@ export default function Switches() {
   return (
     <div className="sw-sequence">
       <div className="sw-columns">
-        {/* Rápido Desarrollo */}
-        <AnimatedSwitch
-          label="Bajo Coste"
-          isOn={propsByLabel.Rapido.isOn}
-          onToggle={() => onToggle("BajoCoste")}
-          disabled={false}
-          shake={propsByLabel.Rapido.shake}
-          shakeStrong={propsByLabel.Rapido.shakeStrong}
-        />
-
-        {/* Mantenible */}
-        <AnimatedSwitch
-          label="Mantenible"
-          isOn={propsByLabel.Mantenible.isOn}
-          shake={propsByLabel.Mantenible.shake}
-          shakeStrong={propsByLabel.Mantenible.shakeStrong}
-          onToggle={() => onToggle("Mantenible")}
-          disabled={false}
-        />
-
-        {/* Bajo Coste */}
-        <AnimatedSwitch
-          label="Rápida entrega"
-          isOn={propsByLabel.BajoCoste.isOn}
-          shake={propsByLabel.BajoCoste.shake}
-          shakeStrong={propsByLabel.BajoCoste.shakeStrong}
-          onToggle={() => onToggle("Rapido")}
-          disabled={false}
-        />
+        {SWITCHES.map(({ key, label }) => (
+          <AnimatedSwitch
+            key={key}
+            label={label}
+            isOn={propsByLabel[key].isOn}
+            shake={propsByLabel[key].shake}
+            shakeStrong={propsByLabel[key].shakeStrong}
+            onToggle={() => onToggle(key)}
+            disabled={false}
+          />
+        ))}
       </div>
 
       <div className="fab-wrap">
